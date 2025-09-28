@@ -1,0 +1,872 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>Spiral Galaxy Simulator — PM + Exaggerated SMBH (V1.3)</title>
+<style>
+  :root{--bg:#0a0d13; --panel:#0f1320cc; --text:#e5e7eb; --muted:#9aa0a6; --border:#1f2937;}
+  html,body{height:100%;margin:0;background:radial-gradient(1200px 700px at 70% 40%, #0e1220 0%, var(--bg) 60%);color:var(--text);font-family:system-ui,-apple-system,Segoe UI,Roboto,Inter,Helvetica,Arial,sans-serif}
+  #app{position:relative;height:100%;width:100%;overflow:hidden}
+  canvas{position:absolute;inset:0;width:100%;height:100%;display:block}
+  .ui{position:absolute;top:12px;left:12px;max-width:560px;max-height:80vh;overflow:auto;background:var(--panel);backdrop-filter:blur(8px);border:1px solid var(--border);border-radius:16px;padding:0;box-shadow:0 10px 30px rgba(0,0,0,.35)}
+  .ui header{position:sticky;top:0;background:linear-gradient(180deg,rgba(15,19,32,.95),rgba(15,19,32,.75));padding:12px 12px 10px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px}
+  .ui h1{font-size:16px;margin:0;font-weight:700;letter-spacing:.2px;flex:1}
+  .ui .content{padding:12px 14px 10px}
+  .row{display:grid;grid-template-columns:1fr auto;gap:8px;align-items:center;margin:8px 0}
+  .row .val{font-variant-numeric:tabular-nums;color:var(--muted)}
+  .row input[type="range"], .row button{grid-column:1 / -1}
+  .row select, .row input[type="number"], .row input[type="checkbox"]{background:#0c111b;border:1px solid var(--border);color:var(--text);border-radius:10px;padding:6px 8px}
+  .row button{background:#111827;color:var(--text);border:1px solid var(--border);padding:8px 10px;border-radius:12px;cursor:pointer;transition:transform .06s ease,background .2s ease,border .2s ease}
+  .row button:hover{background:#0f172a;border-color:#243044}
+  .row button:active{transform:translateY(1px)}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+  .grid3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px}
+  .hint{font-size:11px;color:var(--muted);margin-top:6px;line-height:1.35}
+  .badge{display:inline-block;font-size:11px;color:#93c5fd;background:#0b1220;border:1px solid #15233b;padding:3px 8px;border-radius:999px;margin-right:6px;margin-top:6px}
+  .overlay{position:absolute;right:12px;top:12px;background:#0f1320b3;border:1px solid var(--border);border-radius:12px;padding:8px 10px;font-size:12px;color:#9aa0a6;backdrop-filter:blur(8px)}
+  .overlay .k{color:var(--text)}
+  .kbd{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;background:#0b0f18;border:1px solid #1c2335;border-bottom-width:2px;padding:0 6px;border-radius:6px;font-size:11px;color:#c7d2fe}
+  .footer{position:absolute;bottom:10px;left:50%;transform:translateX(-50%);color:#9aa0a6;font-size:12px;text-align:center;background:#0f1320b3;border:1px solid var(--border);border-radius:999px;padding:6px 10px;backdrop-filter:blur(8px)}
+  hr{border:0;border-top:1px solid var(--border);opacity:.7;margin:8px 0}
+  label small{color:var(--muted);font-size:11px}
+  .ui.collapsed .content{display:none}
+  .ui.collapsed{max-height:unset;overflow:visible}
+  .collapse-btn{background:#0b0f18;border:1px solid #1c2335;color:#c7d2fe;border-radius:8px;padding:6px 8px;cursor:pointer}
+  .collapse-btn:hover{filter:brightness(1.1)}
+</style>
+</head>
+<body>
+<div id="app">
+  <canvas id="galaxy"></canvas>
+  <canvas id="contours"></canvas>
+  <canvas id="heatmap"></canvas>
+
+  <div class="ui" id="panel">
+    <header>
+      <h1>Spiral Galaxy — PM + Exaggerated SMBH</h1>
+      <button id="collapse" class="collapse-btn" title="Collapse/Expand panel">▾</button>
+    </header>
+
+    <div class="content">
+      <div class="row grid2">
+        <div class="row">
+          <label>Preset</label>
+          <select id="preset">
+            <option value="mw">Milky Way–ish</option>
+            <option value="flat">Flat Disk</option>
+            <option value="kepler">Keplerian (point mass)</option>
+            <option value="solid">Solid Body</option>
+            <option value="chaos">Swirly Chaos</option>
+          </select>
+        </div>
+        <div class="row">
+          <label>Stars</label><input id="numStars" type="number" min="2000" max="60000" step="1000" value="30000"/>
+        </div>
+      </div>
+
+      <div class="row grid3">
+        <div class="row"><label>Star size</label><input id="starSize" type="number" min="0.5" max="3" step="0.1" value="1.0"/></div>
+        <div class="row"><label>Time warp <span class="val" id="v_speed">1.00×</span></label><input id="speed" type="range" min="0" max="5" step="0.01" value="0.07"/></div>
+        <div class="row"><label>Base Δt <span class="val" id="v_dt">0.020</span></label><input id="dt" type="range" min="0.001" max="0.06" step="0.001" value="0.006"/></div>
+      </div>
+
+      <div class="row grid3">
+        <div class="row"><label>Trail fade <span class="val" id="v_fade">0.07</span></label><input id="fade" type="range" min="0.01" max="0.25" step="0.005" value="1.00"/></div>
+        <div class="row"><label>Init rotation</label><select id="rotModel">
+          <option value="composite">Composite (solid inner → flat outer)</option>
+          <option value="flat">Flat</option>
+          <option value="kepler">Keplerian</option>
+          <option value="solid">Solid-body</option>
+        </select></div>
+        <div class="row"><label>Flat speed v₀ <span class="val" id="v_v0">1.20</span></label><input id="v0" type="range" min="0.2" max="3" step="0.01" value="0.85"/></div>
+      </div>
+
+      <div class="row grid3">
+        <div class="row"><label>Turn radius r<sub>turn</sub> <span class="val" id="v_rturn">8.0</span></label><input id="rturn" type="range" min="2" max="20" step="0.1" value="8"/></div>
+        <div class="row"><label>Disk scale R<sub>s</sub> <span class="val" id="v_rs">10.0</span></label><input id="rs" type="range" min="4" max="20" step="0.1" value="10"/></div>
+        <div class="row"><label>Vel. dispersion</label><input id="vdisp" type="number" min="0" max="0.6" step="0.01" value="0.12"/></div>
+      </div>
+
+      <hr/>
+
+      <div class="row"><label><b>Self-gravity (PM)</b></label><input id="selfOn" type="checkbox" checked/></div>
+      <div class="row grid3">
+        <div class="row"><label>PM grid</label><select id="pmGrid"><option>128</option><option selected>160</option><option>192</option><option>224</option><option>256</option></select></div>
+        <div class="row"><label>PM every N frames</label><input id="pmEvery" type="number" min="1" max="12" value="3"/></div>
+        <div class="row"><label>Iterations</label><input id="pmIter" type="number" min="10" max="600" value="160"/></div>
+      </div>
+      <div class="row grid3">
+        <div class="row"><label>Relax ω</label><input id="pmOmega" type="number" step="0.05" min="1.0" max="1.95" value="1.85"/></div>
+        <div class="row"><label>Softening ε</label><input id="soften" type="number" step="0.01" min="0.05" max="2" value="0.25"/></div>
+        <div class="row"><label>Gravity G</label><input id="gravG" type="number" step="0.01" min="0.01" max="5" value="1.00"/></div>
+      </div>
+      <div class="row grid3">
+        <div class="row"><label>Zero-pad factor</label><select id="padFactor"><option>1.0</option><option selected>1.5</option><option>2.0</option></select></div>
+        <div class="row"><label>Smooth passes</label><input id="pmSmooth" type="number" min="0" max="3" value="1"/></div>
+        <div class="row"><label>Recenter COM</label><input id="recentCOM" type="checkbox" checked/></div>
+      </div>
+      <div class="row grid3">
+        <div class="row"><label>PM ramp frames</label><input id="pmRamp" type="number" min="0" max="1000" value="10"/></div>
+        <div class="row"><label>Init from PM equilibrium</label><input id="initPM" type="checkbox" checked/></div>
+        <div class="row"><label>Background halo (0–1)</label><input id="haloFrac" type="number" min="0" max="1" step="0.05" value="1"/></div>
+      </div>
+
+      <hr/>
+
+      <!-- Central SMBH controls -->
+      <div class="row"><label><b>Central SMBH</b> <small>(point-mass at origin)</small></label><input id="bhOn" type="checkbox" checked/></div>
+      <div class="row grid3">
+        <div class="row" style="grid-column:1 / -1">
+          <label>SMBH strength μ <small>(~GM)</small> <span class="val" id="v_bh">12.0</span></label>
+          <input id="bhMass" type="range" min="0" max="200" step="0.5" value="100.0"/>
+        </div>
+        <div class="row"><label>SMBH softening ε<small> (stabilizer)</small> <span class="val" id="v_bheps">0.20</span></label><input id="bhSoft" type="range" min="0.05" max="1.0" step="0.01" value="0.20"/></div>
+        <div class="row"><label>Show BH ring (r<sub>inf</sub>)</label><input id="bhRing" type="checkbox"/></div>
+      </div>
+      <div class="hint">The dashed ring shows the sphere of influence r<sub>inf</sub> ≈ μ / v₀². Increasing μ exaggerates central gravity; smaller ε makes the core sharper but can destabilize.</div>
+
+      <hr/>
+
+      <div class="row"><label><b>Contours</b></label><input id="showContours" type="checkbox"/></div>
+      <div class="row grid3">
+        <div class="row"><label>Levels</label><input id="contourLevels" type="number" min="3" max="16" value="3"/></div>
+        <div class="row"><label>Closed only</label><input id="closedOnly" type="checkbox"/></div>
+        <div class="row"><label>Line width</label><input id="contourWidth" type="number" min="0.5" max="3" step="0.1" value="1.6"/></div>
+      </div>
+      <div class="row grid3">
+        <div class="row"><label>Fill contours</label><input id="fillContours" type="checkbox"/></div>
+        <div class="row"><label>Exp spacing</label><input id="expSpacing" type="checkbox"/></div>
+        <div class="row"><label>Every N frames</label><input id="contourEvery" type="number" min="1" max="12" value="1"/></div>
+      </div>
+
+      <hr/>
+
+      <div class="row"><label><b>Heatmap</b> <small>(fast grid render)</small></label><input id="showHeat" type="checkbox" checked/></div>
+      <div class="row grid3">
+        <div class="row"><label>Opacity</label><input id="heatOpacity" type="number" min="0.05" max="1" step="0.05" value="0.85"/></div>
+        <div class="row"><label>Equalize</label><input id="heatEqualize" type="checkbox"/></div>
+        <div class="row"><label>Colormap</label><select id="heatMap"><option value="viridis">Viridis</option><option value="magma">Magma</option><option value="inferno" selected>Inferno</option><option value="ice">IceFire</option></select></div>
+      </div>
+      <div class="row grid3">
+        <div class="row"><label>Every N frames</label><input id="heatEvery" type="number" min="1" max="30" value="6"/></div>
+        <div class="row"><label>Resolution (% of PM)</label><input id="heatRes" type="number" min="20" max="100" step="5" value="100"/></div>
+        <div class="row"><label>Blend mode</label><select id="heatBlend"><option value="source-over" selected>Normal</option><option value="lighter">Additive</option><option value="multiply">Multiply</option><option value="screen">Screen</option></select></div>
+      </div>
+
+      <div class="row grid2"><button id="apply">Rebuild Galaxy</button><button id="reset">Reset View</button></div>
+      <div class="row grid2"><button id="pause">⏸️ Pause</button><button id="snap">📷 Save PNG</button></div>
+      <div class="badge">Leapfrog integrator</div><div class="badge">Particle-Mesh gravity (SOR Poisson)</div><div class="badge">Central SMBH (exaggerated)</div><div class="badge">Fast Heatmap renderer</div><div class="badge">PM-equilibrium init · Gravity ramp</div>
+      <div class="hint">Space: pause · +/-: speed · R: rebuild · Drag: pan · Wheel: zoom · C: collapse panel</div>
+    </div>
+  </div>
+
+  <div class="overlay" id="hud"></div>
+  <div class="footer">Made with ❤️ and vanilla JS · <span class="kbd">Canvas 2D</span></div>
+</div>
+
+<script>
+(()=>{
+  const cvs=document.getElementById('galaxy'),ctx=cvs.getContext('2d',{alpha:true,desynchronized:true}),
+        ccv=document.getElementById('contours'),cctx=ccv.getContext('2d',{alpha:true,desynchronized:true}),
+        hcv=document.getElementById('heatmap'),hctx=hcv.getContext('2d',{alpha:true,desynchronized:true});
+
+  const el=id=>document.getElementById(id);
+
+  // Controls
+  const controls={
+    preset:el('preset'),numStars:el('numStars'),starSize:el('starSize'),
+    speed:el('speed'),dt:el('dt'),fade:el('fade'),
+    rotModel:el('rotModel'),v0:el('v0'),rturn:el('rturn'),rs:el('rs'),vdisp:el('vdisp'),
+    selfOn:el('selfOn'),pmGrid:el('pmGrid'),pmEvery:el('pmEvery'),pmIter:el('pmIter'),
+    pmOmega:el('pmOmega'),soften:el('soften'),gravG:el('gravG'),padFactor:el('padFactor'),
+    pmSmooth:el('pmSmooth'),recentCOM:el('recentCOM'),pmRamp:el('pmRamp'),
+    initPM:el('initPM'),haloFrac:el('haloFrac'),
+    // contours & heat
+    showContours:el('showContours'),contourLevels:el('contourLevels'),closedOnly:el('closedOnly'),
+    contourWidth:el('contourWidth'),fillContours:el('fillContours'),expSpacing:el('expSpacing'),
+    contourEvery:el('contourEvery'),
+    showHeat:el('showHeat'),heatOpacity:el('heatOpacity'),heatEqualize:el('heatEqualize'),heatMap:el('heatMap'),
+    heatEvery:el('heatEvery'),heatRes:el('heatRes'),heatBlend:el('heatBlend'),
+    // buttons
+    apply:el('apply'),reset:el('reset'),pause:el('pause'),snap:el('snap'),
+    // panel
+    collapse:el('collapse'),
+    // SMBH
+    bhOn:el('bhOn'),bhMass:el('bhMass'),bhSoft:el('bhSoft'),bhRing:el('bhRing')
+  };
+  const label={speed:el('v_speed'),dt:el('v_dt'),v0:el('v_v0'),rturn:el('v_rturn'),rs:el('v_rs'),bh:el('v_bh'),bheps:el('v_bheps')};
+
+  // Canvas sizing
+  let W=0,H=0,DPR=Math.min(window.devicePixelRatio||1,2);
+  function resize(){
+    [cvs,ccv,hcv].forEach(cv=>{cv.style.width='100%';cv.style.height='100%';cv.width=Math.floor(window.innerWidth*DPR);cv.height=Math.floor(window.innerHeight*DPR)});
+    const w=window.innerWidth,h=window.innerHeight;
+    W=cvs.clientWidth=w;H=cvs.clientHeight=h;
+    ctx.setTransform(DPR,0,0,DPR,0,0);cctx.setTransform(DPR,0,0,DPR,0,0);hctx.setTransform(DPR,0,0,DPR,0,0);
+    const minDim=Math.min(W,H);
+    params.scale=(minDim*0.42)/(params.Rs*2.2);
+  }
+  window.addEventListener('resize',resize,{passive:true});
+
+  const rand=Math.random;
+  const randn=()=>{let u=0,v=0;while(u===0)u=rand();while(v===0)v=rand();return Math.sqrt(-2*Math.log(u))*Math.cos(2*Math.PI*v)};
+
+  // Rotation models
+  function rotCurveSpeed(r){
+    const {model,v0,rTurn}=params;
+    if(model==='flat')return v0;
+    if(model==='kepler')return Math.sqrt(12/Math.max(r,1e-5));
+    if(model==='solid')return (v0/rTurn)*r;
+    if(r<rTurn)return (v0/rTurn)*r;
+    return v0;
+  }
+  function analyticAccel(x,y){
+    const r=Math.hypot(x,y)||1e-6;
+    const v=rotCurveSpeed(r);
+    const a=-(v*v)/(r);
+    return {ax:a*(x/r),ay:a*(y/r)};
+  }
+
+  // SMBH
+  function bhAccel(x,y){
+    if(!params.BH.on || params.BH.mu<=0) return {ax:0,ay:0};
+    const eps=params.BH.soft;
+    const r2=x*x+y*y+eps*eps;
+    const invr = 1/Math.sqrt(r2);
+    const invr3 = invr*invr*invr;
+    const f = -params.BH.mu * invr3; // μ ≈ G*M (code units)
+    return {ax:f*x, ay:f*y};
+  }
+  function bhRinf(){
+    const v0 = Math.max(0.2, params.v0);
+    return params.BH.mu/(v0*v0 + 1e-9);
+  }
+
+  function starColorByRadius(r,maxR){
+    const u=Math.min(1,r/(maxR*1.1));
+    const c1=[255,213,161],c2=[159,211,255];
+    const k=u*u;
+    const rc=Math.round(c1[0]+(c2[0]-c1[0])*k);
+    const gc=Math.round(c1[1]+(c2[1]-c1[1])*k);
+    const bc=Math.round(c1[2]+(c2[2]-c1[2])*k);
+    return `rgb(${rc},${gc},${bc})`;
+  }
+
+  // Simulation params
+  let running=true, frameCount=0, stars=[];
+  const params={
+    numStars:12000,starSize:1.0,baseDt:0.02,speed:1.0,fade:0.07,
+    model:'composite',v0:1.2,rTurn:8.0,Rs:10.0,vDisp:0.12,
+    scale:18,zoom:1,offsetX:0,offsetY:0,
+    // Particle-Mesh gravity block
+    PM:{on:true,grid:160,iter:160,omega:1.85,every:3,pad:1.5,soften:0.25,G:1.0,smooth:1,phi:null,ax:null,ay:null,field:null,bounds:null,lastFrame:-1,dx:1,dy:1,rampFrames:240,ramp:0,haloFrac:0.0},
+    // Contours & heat
+    contours:{show:true,levels:12,every:3,width:1.6,fill:true,expSpacing:true,closedOnly:false,lastFrame:-1},
+    heat:{show:false,opacity:0.35,equalize:true,map:'viridis',every:6,lastFrame:-1,resPct:100,blend:'source-over'},
+    // SMBH
+    BH:{on:false,mu:12.0,soft:0.20, ramp:0, ring:false}
+  };
+
+  // HUD
+  const hud=document.getElementById('hud');
+  function updateHUD(extra=''){
+    const pmTxt=params.PM.on?(params.PM.grid+'²'):'off';
+    const dtTxt=(params.baseDt*params.speed).toFixed(3);
+    const bhTxt=params.BH.on?('μ '+params.BH.mu.toFixed(1)+' · ε '+params.BH.soft.toFixed(2)):'no SMBH';
+    hud.innerHTML=`Stars <span class="k">${params.numStars.toLocaleString()}</span> · PM <span class="k">${pmTxt}</span> · Δt <span class="k">${dtTxt}</span> · SMBH <span class="k">${bhTxt}</span>${extra?(' · '+extra):''}`;
+  }
+
+  // Build galaxy
+  function sampleExp(scale){const u1=Math.max(1e-8,Math.random()),u2=Math.max(1e-8,Math.random());return -scale*(Math.log(u1)+Math.log(u2))}
+  function buildGalaxy(){
+    stars=[];
+    const {Rs,numStars,vDisp}=params;
+    const maxR=Rs*5.0;
+    for(let i=0;i<numStars;i++){
+      let r=sampleExp(Rs); if(r>maxR) r=maxR*Math.pow(Math.random(),0.5);
+      const th=Math.random()*Math.PI*2;
+      let x=r*Math.cos(th),y=r*Math.sin(th);
+      const vCirc=rotCurveSpeed(r);
+      const uTx=-Math.sin(th),uTy=Math.cos(th);
+      let vx=uTx*vCirc,vy=uTy*vCirc;
+      const dv=vDisp*vCirc; vx+=dv*randn()*0.7; vy+=dv*randn()*0.7;
+      const color=starColorByRadius(r,maxR);
+      stars.push({x,y,vx,vy,ax:0,ay:0,color,m:1});
+    }
+    // Always build density for visuals; solve gravity only if PM.on
+    buildDensityOnGrid();
+    if(params.PM.on){
+      solvePoissonSOR();
+      if(controls.initPM.checked){ initVelocitiesFromPM(); }
+    }
+    params.PM.ramp=0; params.PM.lastFrame=-1; params.contours.lastFrame=-1; params.heat.lastFrame=-1;
+    params.BH.ramp=0; // ramp SMBH smoothly as well
+  }
+
+  function initVelocitiesFromPM(){
+    for(const s of stars){
+      const r=Math.hypot(s.x,s.y)||1e-6;
+      const g=sampleGridAccel(s.x,s.y);
+      const gBH = bhAccel(s.x,s.y);
+      const ar=(s.x*(g.ax+0.5*gBH.ax)+s.y*(g.ay+0.5*gBH.ay))/r;
+      const vc=Math.sqrt(Math.max(0,-ar*r));
+      const tx=-s.y/r,ty=s.x/r;
+      const jitter=params.vDisp*vc;
+      s.vx=tx*vc+jitter*randn()*0.5;
+      s.vy=ty*vc+jitter*randn()*0.5;
+    }
+  }
+
+  // PM grid helpers
+  function buildDensityOnGrid(){
+    const PM=params.PM;
+    const g0=parseInt(PM.grid|0,10);
+    const pad=Math.max(1,parseFloat(PM.pad)||1);
+    const s=params.scale*params.zoom;
+    const baseHalfW=W*0.48/s,baseHalfH=H*0.48/s;
+    const halfW=baseHalfW*pad,halfH=baseHalfH*pad;
+    const xmin=-halfW-params.offsetX/s,xmax=halfW-params.offsetX/s;
+    const ymin=-halfH-params.offsetY/s,ymax=halfH-params.offsetY/s;
+    const gw=Math.max(32,Math.floor(g0*pad));
+    const gh=Math.max(32,Math.floor(g0*pad));
+    const dx=(xmax-xmin)/(gw-1),dy=(ymax-ymin)/(gh-1);
+    PM.dx=dx;PM.dy=dy;
+    const field=new Float32Array(gw*gh);
+    for(let i=0;i<stars.length;i++){
+      const st=stars[i];
+      const gx=(st.x-xmin)/(xmax-xmin)*(gw-1);
+      const gy=(st.y-ymin)/(ymax-ymin)*(gh-1);
+      if(gx<0||gx>=gw-1||gy<0||gy>=gh-1)continue;
+      const ix=gx|0,iy=gy|0;
+      const fx=gx-ix,fy=gy-iy;
+      const w00=(1-fx)*(1-fy),w10=fx*(1-fy),w01=(1-fx)*fy,w11=fx*fy;
+      const m=st.m||1;
+      field[iy*gw+ix]+=m*w00;
+      field[iy*gw+ix+1]+=m*w10;
+      field[(iy+1)*gw+ix]+=m*w01;
+      field[(iy+1)*gw+ix+1]+=m*w11;
+    }
+    const R=Math.max(0,PM.smooth|0);
+    if(R>0){
+      const tmp=new Float32Array(gw*gh);
+      function blurSeparable(src,dst){
+        for(let y=0;y<gh;y++){
+          let acc=0;
+          for(let x=-R;x<gw+R;x++){
+            const addX=Math.min(gw-1,Math.max(0,x+R));
+            const remX=Math.min(gw-1,Math.max(0,x-R-1));
+            acc+=src[y*gw+addX]; acc-=src[y*gw+remX];
+            if(x>=0)dst[y*gw+x]=acc/(R*2+1);
+          }
+        }
+        for(let x=0;x<gw;x++){
+          let acc=0;
+          for(let y=-R;y<gh+R;y++){
+            const addY=Math.min(gh-1,Math.max(0,y+R));
+            const remY=Math.min(gh-1,Math.max(0,y-R-1));
+            acc+=dst[addY*gw+x]; acc-=dst[remY*gw+x];
+            if(y>=0)src[y*gw+x]=acc/(R*2+1);
+          }
+        }
+      }
+      blurSeparable(field,tmp);
+    }
+    PM.field=field; PM.bounds={xmin,xmax,ymin,ymax,gw,gh};
+    return PM;
+  }
+
+  function solvePoissonSOR(){
+    const PM=params.PM;
+    const {gw,gh}=PM.bounds;
+    const field=PM.field;
+    const phi=PM.phi&&PM.phi.length===gw*gh?PM.phi:new Float32Array(gw*gh);
+    const omega=Math.max(1.0,Math.min(1.95,PM.omega));
+    const iters=Math.max(10,Math.min(1000,PM.iter|0));
+    const G=PM.G;
+    const dx=PM.dx,dy=PM.dy;
+    const h2x=1.0/(dx*dx),h2y=1.0/(dy*dy);
+    const invDen=1.0/(2*h2x+2*h2y);
+    let mean=0; for(let i=0;i<field.length;i++)mean+=field[i]; mean/=field.length;
+    const rhsScale=4*Math.PI*G;
+    for(let it=0;it<iters;it++){
+      for(let parity=0;parity<2;parity++){
+        for(let y=1;y<gh-1;y++){
+          const row=y*gw; const isOdd=(y&1);
+          let x=(isOdd?1-parity:parity)+1;
+          for(;x<gw-1;x+=2){
+            const i=row+x;
+            const rhs=rhsScale*(field[i]-mean);
+            const lap=(phi[i-1]+phi[i+1])*h2x+(phi[i-gw]+phi[i+gw])*h2y;
+            const newVal=(lap-rhs)*invDen;
+            phi[i]=phi[i]+omega*(newVal-phi[i]);
+          }
+        }
+      }
+    }
+    PM.phi=phi;
+    const ax=new Float32Array(gw*gh), ay=new Float32Array(gw*gh);
+    for(let y=1;y<gh-1;y++){
+      const row=y*gw;
+      for(let x=1;x<gw-1;x++){
+        const i=row+x;
+        ax[i]=-(phi[i+1]-phi[i-1])/(2*dx);
+        ay[i]=-(phi[i+gw]-phi[i-gw])/(2*dy);
+      }
+    }
+    // Neumann edges
+    for(let x=0;x<gw;x++){
+      ax[x]=ax[x+gw]; ay[x]=ay[x+gw];
+      ax[(gh-1)*gw+x]=ax[(gh-2)*gw+x]; ay[(gh-1)*gw+x]=ay[(gh-2)*gw+x];
+    }
+    for(let y=0;y<gh;y++){
+      const r=y*gw; ax[r]=ax[r+1]; ay[r]=ay[r+1];
+      ax[r+gw-1]=ax[r+gw-2]; ay[r+gw-1]=ay[r+gw-2];
+    }
+    PM.ax=ax; PM.ay=ay;
+  }
+
+  function sampleGridAccel(x,y){
+    const PM=params.PM;
+    const {xmin,xmax,ymin,ymax,gw,gh}=PM.bounds||{};
+    if(!PM.bounds) return {ax:0,ay:0};
+    const gx=(x-xmin)/(xmax-xmin)*(gw-1);
+    const gy=(y-ymin)/(ymax-ymin)*(gh-1);
+    if(gx<0||gx>=gw-1||gy<0||gy>=gh-1) return {ax:0,ay:0};
+    const ix=gx|0,iy=gy|0;
+    const fx=gx-ix,fy=gy-iy;
+    const i00=iy*gw+ix,i10=i00+1,i01=i00+gw,i11=i01+1;
+    const ax=(1-fx)*(1-fy)*PM.ax[i00]+fx*(1-fy)*PM.ax[i10]+(1-fx)*fy*PM.ax[i01]+fx*fy*PM.ax[i11];
+    const ay=(1-fx)*(1-fy)*PM.ay[i00]+fx*(1-fy)*PM.ay[i10]+(1-fx)*fy*PM.ay[i01]+fx*fy*PM.ay[i11];
+    return {ax,ay};
+  }
+
+  // Contours/Heatmap
+  function contourLevels(){
+    const C=params.contours,PM=params.PM; const levels=[];
+    if(!PM.field) return levels;
+    const V=PM.field; let maxv=0; for(let i=0;i<V.length;i++) if(V[i]>maxv) maxv=V[i];
+    const L=C.levels|0; const base=maxv*0.08,tight=maxv*0.95;
+    for(let i=1;i<=L;i++){const u=i/(L+1);const lvl=C.expSpacing?(base*Math.pow(tight/base,u)):(base+(tight-base)*u);levels.push(lvl)}
+    if(levels.length) levels[levels.length-1]=tight;
+    return levels;
+  }
+  function buildIsoSegments(level){
+    const PM=params.PM; if(!PM.bounds) return [];
+    const {gw,gh}=PM.bounds; const V=PM.field; const segs=[];
+    function edgeInterp(x1,y1,x2,y2,v1,v2){const denom=(v2-v1);let t=(level-v1)/(Math.abs(denom)<1e-12?(denom<0?-1e-12:1e-12):denom);if(!isFinite(t))t=0.5;t=Math.max(0,Math.min(1,t));return [x1+(x2-x1)*t,y1+(y2-y1)*t]}
+    const s2p=(gx,gy)=>{const {xmin,ymin}=PM.bounds;const x=(xmin+gx*PM.dx)*params.scale*params.zoom;const y=(ymin+gy*PM.dy)*params.scale*params.zoom;return [x,y]};
+    for(let y=0;y<gh-1;y++){
+      for(let x=0;x<gw-1;x++){
+        const v00=V[y*gw+x],v10=V[y*gw+x+1],v11=V[(y+1)*gw+x+1],v01=V[(y+1)*gw+x];
+        const idx=(v00>level)|((v10>level)<<1)|((v11>level)<<2)|((v01>level)<<3);
+        if(idx===0||idx===15) continue;
+        const pTop=edgeInterp(x,y,x+1,y,v00,v10);
+        const pRight=edgeInterp(x+1,y,x+1,y+1,v10,v11);
+        const pBottom=edgeInterp(x+1,y+1,x,y+1,v11,v01);
+        const pLeft=edgeInterp(x,y+1,x,y,v01,v00);
+        const aTop=s2p(pTop[0],pTop[1]), aRight=s2p(pRight[0],pRight[1]), aBottom=s2p(pBottom[0],pBottom[1]), aLeft=s2p(pLeft[0],pLeft[1]);
+        const decider=(v00-level)*(v11-level)-(v10-level)*(v01-level);
+        switch(idx){
+          case 1:case 14:segs.push([aTop,aLeft]);break;
+          case 2:case 13:segs.push([aRight,aTop]);break;
+          case 3:case 12:segs.push([aRight,aLeft]);break;
+          case 4:case 11:segs.push([aBottom,aRight]);break;
+          case 6:case 9:segs.push([aTop,aBottom]);break;
+          case 7:case 8:segs.push([aLeft,aBottom]);break;
+          case 5: if(decider>=0){segs.push([aTop,aLeft]);segs.push([aRight,aBottom])} else {segs.push([aTop,aRight]);segs.push([aBottom,aLeft])} break;
+          case 10:if(decider>=0){segs.push([aTop,aRight]);segs.push([aBottom,aLeft])} else {segs.push([aTop,aLeft]);segs.push([aRight,aBottom])} break;
+        }
+      }
+    }
+    return segs;
+  }
+  function stitchSegments(segments){
+    const EPS=1.0; const qk=p=>Math.round(p[0]/EPS)+','+Math.round(p[1]/EPS);
+    const nodes=new Map();
+    const addNode=p=>{const k=qk(p); if(!nodes.has(k)) nodes.set(k,{pt:p.slice(0),nbrs:new Set()}); return k;};
+    const addEdge=(k1,k2)=>{ if(k1===k2) return; nodes.get(k1).nbrs.add(k2); nodes.get(k2).nbrs.add(k1); };
+    for(const [p,q] of segments){const k1=addNode(p),k2=addNode(q); addEdge(k1,k2);}
+    const used=new Set(),lines=[]; const edgeId=(a,b)=>a<b?a+'|'+b:b+'|'+a;
+    const startKeys=[]; for(const [k,v] of nodes){ if(v.nbrs.size===1) startKeys.push(k); }
+    const walk=start=>{const pts=[]; let curr=start,prev=null; pts.push(nodes.get(curr).pt);
+      while(true){
+        const nbrs=Array.from(nodes.get(curr).nbrs); let next=null,bestAngle=Infinity;
+        for(const nb of nbrs){
+          const id=edgeId(curr,nb); if(used.has(id)) continue;
+          if(prev){
+            const a=nodes.get(prev).pt,b=nodes.get(curr).pt,c=nodes.get(nb).pt;
+            const ux=b[0]-a[0],uy=b[1]-a[1],vx=c[0]-b[0],vy=c[1]-b[1];
+            const dot=(ux*vx+uy*vy)/(Math.hypot(ux,uy)*Math.hypot(vx,vy)+1e-6);
+            const ang=Math.acos(Math.max(-1,Math.min(1,dot)));
+            if(ang<bestAngle){bestAngle=ang; next=nb;}
+          } else { next=nb; break; }
+        }
+        if(!next) break;
+        used.add(edgeId(curr,next));
+        prev=curr; curr=next; pts.push(nodes.get(curr).pt);
+        if(curr===start) break;
+      }
+      return pts;
+    };
+    for(const k of startKeys){
+      const nbrs=nodes.get(k).nbrs;
+      for(const nb of nbrs){const id=edgeId(k,nb); if(used.has(id)) continue; used.add(id); const pts=walk(nb); pts.unshift(nodes.get(k).pt); if(pts.length>=3) lines.push(pts);}
+    }
+    for(const [k,v] of nodes){
+      for(const nb of v.nbrs){const id=edgeId(k,nb); if(used.has(id)) continue; used.add(id); const pts=walk(nb); pts.unshift(nodes.get(k).pt); if(pts.length>=3) lines.push(pts);}
+    }
+    return lines;
+  }
+  function chaikin(points,iters=1){
+    for(let k=0;k<iters;k++){
+      const out=[]; for(let i=0;i<points.length-1;i++){const p=points[i],q=points[i+1];const Q=[0.75*p[0]+0.25*q[0],0.75*p[1]+0.25*q[1]];const R=[0.25*p[0]+0.75*q[0],0.25*p[1]+0.75*q[1]];out.push(Q,R)} points=out;
+    }
+    return points;
+  }
+  function drawContours(){
+    cctx.clearRect(0,0,W,H);
+    const C=params.contours,PM=params.PM;
+    if(!C.show||!PM.field) return;
+    const lvls=contourLevels();
+    cctx.save(); cctx.translate(W*0.5+params.offsetX,H*0.5+params.offsetY);
+    cctx.lineCap='round'; cctx.lineJoin='round';
+    if(C.fill){
+      cctx.globalCompositeOperation='source-over';
+      for(let li=0;li<lvls.length;li++){
+        const segs=buildIsoSegments(lvls[li]); const lines=stitchSegments(segs);
+        const hue=210-180*(li/(lvls.length-1||1)); cctx.fillStyle=`hsla(${hue},90%,55%,0.22)`;
+        for(const line of lines){
+          const closed=((line[0][0]-line[line.length-1][0])**2+(line[0][1]-line[line.length-1][1])**2)<16;
+          if(!closed) continue;
+          const pts=chaikin(line,1); cctx.beginPath(); cctx.moveTo(pts[0][0],pts[0][1]);
+          for(let i=1;i<pts.length;i++) cctx.lineTo(pts[i][0],pts[i][1]);
+          cctx.closePath(); cctx.fill();
+        }
+      }
+    }
+    cctx.globalCompositeOperation='lighter'; cctx.lineWidth=C.width;
+    for(let li=0;li<lvls.length;li++){
+      const segs=buildIsoSegments(lvls[li]); const lines=stitchSegments(segs);
+      const hue=210-180*(li/(lvls.length-1||1)); cctx.strokeStyle=`hsla(${hue},90%,70%,0.9)`;
+      for(const line of lines){
+        const closed=((line[0][0]-line[line.length-1][0])**2+(line[0][1]-line[line.length-1][1])**2)<16;
+        if(C.closedOnly&&!closed) continue;
+        const pts=chaikin(line,1); if(pts.length<3) continue;
+        let len=0; for(let i=1;i<pts.length;i++) len+=Math.hypot(pts[i][0]-pts[i-1][0],pts[i][1]-pts[i-1][1]);
+        if(len<6) continue;
+        cctx.beginPath(); cctx.moveTo(pts[0][0],pts[0][1]); for(let i=1;i<pts.length;i++) cctx.lineTo(pts[i][0],pts[i][1]); if(closed) cctx.closePath(); cctx.stroke();
+      }
+    }
+    // Draw BH ring (r_inf) on top of contours if enabled
+    if(params.BH.ring && params.BH.on){
+      const rin = bhRinf();
+      const s=params.scale*params.zoom;
+      cctx.setLineDash([8,6]); cctx.lineWidth=1.5; cctx.strokeStyle='rgba(139, 233, 253, 0.9)';
+      cctx.beginPath(); cctx.arc(0,0, rin*s, 0, Math.PI*2); cctx.stroke();
+      cctx.setLineDash([]);
+    }
+    cctx.restore();
+  }
+
+  // Colormaps
+  function lerp(a,b,t){return a+(b-a)*t}
+  function lerp3(p0,p1,t){return [Math.round(lerp(p0[0],p1[0],t)),Math.round(lerp(p0[1],p1[1],t)),Math.round(lerp(p0[2],p1[2],t))]}
+  const MAPS={
+    viridis:[[68,1,84],[59,82,139],[33,145,140],[94,201,98],[253,231,37]],
+    magma:[[0,0,4],[28,16,68],[79,18,123],[129,37,129],[181,54,122],[229,80,100],[252,135,97],[252,194,133],[252,240,164]],
+    inferno:[[0,0,0],[31,12,72],[85,15,109],[136,34,106],[186,54,85],[227,89,51],[249,140,10],[252,194,58],[252,243,137]],
+    ice:[[0,0,0],[27,75,123],[58,123,180],[114,175,191],[179,214,165],[241,234,191],[232,160,82],[180,76,38],[122,33,23]]
+  };
+  function getColor(u,map){
+    const stops=MAPS[map]||MAPS.viridis;
+    const t=Math.max(0,Math.min(1,u));
+    const s=t*(stops.length-1); const i=Math.floor(s); const f=s-i;
+    const p0=stops[i],p1=stops[Math.min(i+1,stops.length-1)];
+    return lerp3(p0,p1,f);
+  }
+
+  // Fast heatmap: render at grid res and scale up
+  const heatOffscreen=document.createElement('canvas');
+  const hctxOff=heatOffscreen.getContext('2d',{willReadFrequently:true});
+  function drawHeatmap(){
+    const Hm=params.heat,PM=params.PM;
+    if(!Hm.show||!PM.field||!PM.bounds) {hctx.clearRect(0,0,W,H); return;}
+    const {gw,gh,xmin,ymin,xmax,ymax}=PM.bounds;
+    const resPct=Math.max(20,Math.min(100, Hm.resPct|0));
+    const rw=Math.max(16, Math.floor(gw*resPct/100));
+    const rh=Math.max(16, Math.floor(gh*resPct/100));
+    heatOffscreen.width=rw; heatOffscreen.height=rh;
+    const img=hctxOff.createImageData(rw,rh); const data=img.data;
+
+    // find max
+    let maxv=0; for(let i=0;i<PM.field.length;i++) if(PM.field[i]>maxv) maxv=PM.field[i];
+    const sx=gw/rw, sy=gh/rh;
+    for(let y=0;y<rh;y++){
+      for(let x=0;x<rw;x++){
+        // average source cells in this bin
+        const gx0=Math.floor(x*sx), gx1=Math.min(gw-1, Math.floor((x+1)*sx));
+        const gy0=Math.floor(y*sy), gy1=Math.min(gh-1, Math.floor((y+1)*sy));
+        let sum=0,cnt=0;
+        for(let yy=gy0; yy<=gy1; yy++){
+          for(let xx=gx0; xx<=gx1; xx++){ sum+=PM.field[yy*gw+xx]; cnt++; }
+        }
+        const v = cnt? (sum/cnt) : 0;
+        const m=maxv||1; let u=v/m;
+        if(Hm.equalize){ const g=0.6; u=Math.pow(u,g); }
+        const [r,g,b]=getColor(u, Hm.map);
+        const a=Math.floor(255*Hm.opacity*u);
+        const idx=(y*rw+x)*4; data[idx]=r; data[idx+1]=g; data[idx+2]=b; data[idx+3]=a;
+      }
+    }
+    hctxOff.putImageData(img,0,0);
+
+    // draw scaled to scene bounds
+    hctx.clearRect(0,0,W,H);
+    hctx.save();
+    hctx.globalCompositeOperation=Hm.blend;
+    const s=params.scale*params.zoom;
+    const dx=W*0.5+params.offsetX + xmin*s;
+    const dy=H*0.5+params.offsetY + ymin*s;
+    const dw=(xmax-xmin)*s;
+    const dh=(ymax-ymin)*s;
+    hctx.imageSmoothingEnabled=true;
+    hctx.imageSmoothingQuality='high';
+    hctx.drawImage(heatOffscreen, 0,0,rw,rh, dx,dy,dw,dh);
+    hctx.restore();
+  }
+
+  // Integration & drawing
+  function integrateStep(dt){
+    // Gentle recentering to curb drift
+    if(controls.recentCOM.checked && (frameCount%120===0)){
+      let mx=0,my=0,mvx=0,mvy=0,M=0;
+      for(const s of stars){const m=s.m||1; mx+=m*s.x; my+=m*s.y; mvx+=m*s.vx; mvy+=m*s.vy; M+=m;}
+      if(M>0){
+        const cx=mx/M,cy=my/M,cvx=mvx/M,cvy=mvy/M;
+        for(const s of stars){s.x-=cx*0.001; s.y-=cy*0.001; s.vx-=cvx*0.001; s.vy-=cvy*0.001;}
+      }
+    }
+
+    // (1) Always update density for visuals on a cadence
+    if(params.PM.lastFrame<0 || (frameCount-params.PM.lastFrame)>=params.PM.every){
+      buildDensityOnGrid();
+      params.PM.lastFrame=frameCount;
+      params.contours.lastFrame=-1;
+      params.heat.lastFrame=-1;
+    }
+
+    // (2) Solve for PM gravity only when enabled
+    if(params.PM.on){
+      solvePoissonSOR();
+    }
+
+    // Ramps
+    if(params.PM.ramp<params.PM.rampFrames) params.PM.ramp++;
+    const gPMScale = params.PM.rampFrames>0? Math.min(1,params.PM.ramp/params.PM.rampFrames):1;
+
+    if(params.BH.on && params.BH.ramp<params.PM.rampFrames) params.BH.ramp++;
+    const gBHScale = params.BH.on ? Math.min(1, params.BH.ramp/(params.PM.rampFrames||1)) : 0;
+
+    // Leapfrog
+    for(const s of stars){
+      const gPM = params.PM.on ? sampleGridAccel(s.x,s.y) : {ax:0,ay:0};
+      const gHalo = (params.PM.haloFrac>0) ? analyticAccel(s.x,s.y) : {ax:0,ay:0};
+      const gBH = params.BH.on ? bhAccel(s.x,s.y) : {ax:0,ay:0};
+
+      const ax = gPMScale*gPM.ax + params.PM.haloFrac*gHalo.ax + gBHScale*gBH.ax;
+      const ay = gPMScale*gPM.ay + params.PM.haloFrac*gHalo.ay + gBHScale*gBH.ay;
+
+      s.vx += 0.5*ax*dt; s.vy += 0.5*ay*dt;
+      s.x  += s.vx*dt;   s.y  += s.vy*dt;
+
+      const gPM2 = params.PM.on ? sampleGridAccel(s.x,s.y) : gPM;
+      const gHalo2 = (params.PM.haloFrac>0) ? analyticAccel(s.x,s.y) : gHalo;
+      const gBH2 = params.BH.on ? bhAccel(s.x,s.y) : gBH;
+
+      const ax2 = gPMScale*gPM2.ax + params.PM.haloFrac*gHalo2.ax + gBHScale*gBH2.ax;
+      const ay2 = gPMScale*gPM2.ay + params.PM.haloFrac*gHalo2.ay + gBHScale*gBH2.ay;
+
+      s.vx += 0.5*ax2*dt; s.vy += 0.5*ay2*dt;
+    }
+  }
+
+  function drawStars(){
+    ctx.globalCompositeOperation='source-over';
+    ctx.fillStyle=`rgba(10,13,19,${params.fade})`; ctx.fillRect(0,0,W,H);
+    const s=params.scale*params.zoom;
+    const size=params.starSize;
+    const cx=W*0.5+params.offsetX,cy=H*0.5+params.offsetY;
+    ctx.save(); ctx.translate(cx,cy);
+    for(const st of stars){
+      const px=st.x*s,py=st.y*s;
+      ctx.fillStyle=st.color;
+      ctx.fillRect(px-0.5*size,py-0.5*size,size,size);
+    }
+    // Draw BH ring here too (in case contours are off)
+    if(params.BH.ring && params.BH.on){
+      const rin = bhRinf();
+      ctx.setLineDash([8,6]); ctx.lineWidth=1.5; ctx.strokeStyle='rgba(139, 233, 253, 0.9)';
+      ctx.beginPath(); ctx.arc(0,0, rin*s, 0, Math.PI*2); ctx.stroke();
+      ctx.setLineDash([]);
+    }
+    ctx.restore();
+  }
+
+  function step(){
+    if(!running) return;
+    requestAnimationFrame(step);
+    const dt=params.baseDt*params.speed;
+    integrateStep(dt);
+    drawStars();
+
+    // Throttled visuals
+    const C=params.contours, Hm=params.heat;
+    if(C.show && (C.lastFrame<0 || (frameCount-C.lastFrame)>=C.every)){
+      drawContours(); C.lastFrame=frameCount;
+    } else if(!C.show){ cctx.clearRect(0,0,W,H); }
+
+    if(Hm.show && (Hm.lastFrame<0 || (frameCount-Hm.lastFrame)>=Hm.every)){
+      drawHeatmap(); Hm.lastFrame=frameCount;
+    } else if(!Hm.show){ hctx.clearRect(0,0,W,H); }
+
+    frameCount++;
+    updateHUD(`PM iters ${params.PM.iter}`);
+  }
+
+  function clamp(x,lo,hi){return Math.min(hi,Math.max(lo,x))}
+
+  function syncFromUI(){
+    params.numStars=clamp(parseInt(controls.numStars.value||'12000',10),2000,60000);
+    params.starSize=clamp(parseFloat(controls.starSize.value||'1.0'),0.5,3);
+    params.speed=parseFloat(controls.speed.value);
+    params.baseDt=parseFloat(controls.dt.value);
+    params.fade=parseFloat(controls.fade.value);
+    params.model=controls.rotModel.value;
+    params.v0=parseFloat(controls.v0.value);
+    params.rTurn=parseFloat(controls.rturn.value);
+    params.Rs=parseFloat(controls.rs.value);
+    params.vDisp=parseFloat(controls.vdisp.value);
+
+    const PM=params.PM;
+    PM.on=!!controls.selfOn.checked;
+    PM.grid=parseInt(controls.pmGrid.value,10);
+    PM.every=clamp(parseInt(controls.pmEvery.value,10)||3,1,12);
+    PM.iter=clamp(parseInt(controls.pmIter.value,10)||160,10,1000);
+    PM.omega=parseFloat(controls.pmOmega.value)||1.85;
+    PM.soften=parseFloat(controls.soften.value)||0.25;
+    PM.G=parseFloat(controls.gravG.value)||1.0;
+    PM.pad=parseFloat(controls.padFactor.value)||1.5;
+    PM.smooth=clamp(parseInt(controls.pmSmooth.value,10)||1,0,3);
+    PM.rampFrames=clamp(parseInt(controls.pmRamp.value,10)||240,0,2000);
+    PM.haloFrac=clamp(parseFloat(controls.haloFrac.value)||0,0,1);
+
+    const C=params.contours;
+    C.show=!!controls.showContours.checked;
+    C.levels=clamp(parseInt(controls.contourLevels.value,10)||12,3,16);
+    C.width=parseFloat(controls.contourWidth.value)||1.6;
+    C.fill=!!controls.fillContours.checked;
+    C.expSpacing=!!controls.expSpacing.checked;
+    C.closedOnly=!!controls.closedOnly.checked;
+    C.every=clamp(parseInt(controls.contourEvery.value,10)||3,1,12);
+
+    params.heat.show=!!controls.showHeat.checked;
+    params.heat.opacity=clamp(parseFloat(controls.heatOpacity.value||'0.35'),0.05,1);
+    params.heat.equalize=!!controls.heatEqualize.checked;
+    params.heat.map=controls.heatMap.value;
+    params.heat.every=clamp(parseInt(controls.heatEvery.value,10)||6,1,60);
+    params.heat.resPct=clamp(parseInt(controls.heatRes.value,10)||100,20,100);
+    params.heat.blend=controls.heatBlend.value;
+
+    // SMBH
+    params.BH.on=!!controls.bhOn.checked;
+    params.BH.mu=parseFloat(controls.bhMass.value)||0;
+    params.BH.soft=parseFloat(controls.bhSoft.value)||0.2;
+    params.BH.ring=!!controls.bhRing.checked;
+
+    label.bh.textContent=params.BH.mu.toFixed(1);
+    label.bheps.textContent=params.BH.soft.toFixed(2);
+    label.speed.textContent=params.speed.toFixed(2)+'×';
+    label.dt.textContent=params.baseDt.toFixed(3);
+    label.v0.textContent=params.v0.toFixed(2);
+    label.rturn.textContent=params.rTurn.toFixed(1);
+    label.rs.textContent=params.Rs.toFixed(1);
+
+    resize();
+  }
+
+  function applyPreset(p){
+    const set=(id,v)=>{controls[id].value=String(v)};
+    if(p==='mw'){
+      set('rotModel','composite'); set('v0',1.4); set('rturn',8); set('rs',9.5); set('vdisp',0.06); set('numStars',10000); set('starSize',1.0);
+    }else if(p==='flat'){
+      set('rotModel','flat'); set('v0',1.2); set('rturn',8); set('rs',10); set('vdisp',0.05); set('numStars',8000); set('starSize',1.1);
+    }else if(p==='kepler'){
+      set('rotModel','kepler'); set('rs',8); set('vdisp',0.04); set('numStars',7000); set('starSize',1.1);
+    }else if(p==='solid'){
+      set('rotModel','solid'); set('v0',1.5); set('rturn',10); set('rs',7.5); set('vdisp',0.03); set('numStars',9000); set('starSize',1.0);
+    }else if(p==='chaos'){
+      set('rotModel','composite'); set('v0',1.1); set('rturn',6.5); set('rs',10.5); set('vdisp',0.14); set('numStars',12000); set('starSize',0.9);
+    }
+    syncFromUI(); buildGalaxy();
+  }
+
+  // Buttons & events
+  controls.apply.addEventListener('click',()=>{syncFromUI(); buildGalaxy()});
+  controls.reset.addEventListener('click',()=>{
+    params.zoom=1; params.offsetX=0; params.offsetY=0; resize(); params.PM.lastFrame=-1; params.contours.lastFrame=-1; params.heat.lastFrame=-1;
+  });
+  controls.pause.addEventListener('click',()=>{running=!running; controls.pause.textContent=running?'⏸️ Pause':'▶️ Play'; if(running) requestAnimationFrame(step)});
+  controls.snap.addEventListener('click',()=>{const link=document.createElement('a');link.download='galaxy_pm_smbh.png';link.href=cvs.toDataURL('image/png');link.click()});
+
+  // Collapse/expand panel
+  const panel=document.getElementById('panel');
+  controls.collapse.addEventListener('click',()=>{
+    panel.classList.toggle('collapsed');
+    controls.collapse.textContent = panel.classList.contains('collapsed') ? '▸' : '▾';
+  });
+
+  controls.preset.addEventListener('change',e=>applyPreset(e.target.value));
+  ['speed','dt','fade','v0','rturn','rs'].forEach(id=>{
+    controls[id].addEventListener('input',()=>{syncFromUI()});
+  });
+
+  ['selfOn','pmGrid','pmEvery','pmIter','pmOmega','soften','gravG','padFactor','pmSmooth','pmRamp','initPM','haloFrac',
+   'showContours','contourLevels','closedOnly','contourWidth','fillContours','expSpacing','contourEvery','showHeat','heatOpacity','heatEqualize','heatMap','heatEvery','heatRes','heatBlend',
+   // SMBH controls
+   'bhOn','bhMass','bhSoft','bhRing'
+  ].forEach(id=>{
+    controls[id].addEventListener('input',()=>{syncFromUI(); params.PM.lastFrame=-1; params.contours.lastFrame=-1; params.heat.lastFrame=-1});
+  });
+
+  window.addEventListener('keydown',e=>{
+    if(e.key===' '){e.preventDefault(); controls.pause.click()}
+    if(e.key==='+'){controls.speed.value=String(Math.min(5,parseFloat(controls.speed.value)+0.05)); syncFromUI()}
+    if(e.key==='-'){controls.speed.value=String(Math.max(0,parseFloat(controls.speed.value)-0.05)); syncFromUI()}
+    if(e.key.toLowerCase()==='r'){controls.apply.click()}
+    if(e.key.toLowerCase()==='c'){controls.collapse.click()}
+  });
+
+  // Panning & zooming
+  let isDragging=false,lastX=0,lastY=0;
+  cvs.addEventListener('mousedown',e=>{isDragging=true; lastX=e.clientX; lastY=e.clientY});
+  window.addEventListener('mouseup',()=>{isDragging=false});
+  window.addEventListener('mousemove',e=>{
+    if(!isDragging) return;
+    const dx=e.clientX-lastX,dy=e.clientY-lastY;
+    params.offsetX+=dx; params.offsetY+=dy; lastX=e.clientX; lastY=e.clientY;
+    params.PM.lastFrame=-1; params.contours.lastFrame=-1; params.heat.lastFrame=-1;
+  });
+  cvs.addEventListener('wheel',e=>{
+    e.preventDefault();
+    const zoomDelta=Math.exp((e.deltaY>0?-1:1)*0.08);
+    params.zoom=clamp(params.zoom*zoomDelta,0.4,4);
+    params.PM.lastFrame=-1; params.contours.lastFrame=-1; params.heat.lastFrame=-1;
+  },{passive:false});
+
+  function init(){ syncFromUI(); buildGalaxy(); requestAnimationFrame(step); }
+  init();
+})();
+</script>
+</body>
+</html>
