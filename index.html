@@ -35,7 +35,139 @@
   .collapse-btn{background:#0b0f18;border:1px solid #1c2335;color:#c7d2fe;border-radius:8px;padding:6px 8px;cursor:pointer}
   .collapse-btn:hover{filter:brightness(1.1)}
 </style>
-</head>
+<!-- GS TOOLTIP + ABOUT INJECT v3 -->
+<style>
+  .gs-tip{position:fixed;z-index:2147483646;pointer-events:none;opacity:0;transition:opacity .12s ease;
+    max-width:360px;background:#111;color:#fff;border:1px solid #333;border-radius:8px;padding:10px 12px;
+    box-shadow:0 6px 24px rgba(0,0,0,.35);font:12.5px/1.35 system-ui,Segoe UI,Roboto,Helvetica,Arial,sans-serif}
+  .gs-tip.show{opacity:1}
+  .gs-tip h4{margin:.1rem 0 .35rem;font-size:13.5px}
+  .gs-tip p{margin:0}
+  .gs-backdrop{position:fixed;inset:0;background:rgba(0,0,0,.55);display:none;align-items:center;justify-content:center;z-index:2147483645}
+  .gs-backdrop.show{display:flex}
+  .gs-modal{width:min(900px,92vw);max-height:85vh;overflow:auto;background:#0f1115;color:#e9eef6;
+    border:1px solid #2a2f3a;border-radius:12px;padding:18px 20px;box-shadow:0 16px 48px rgba(0,0,0,.45)}
+  .gs-modal h2{margin:.2rem 0 .6rem;font-size:20px}
+  .gs-modal p{margin:.4rem 0 1rem}
+  .gs-modal .row{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+  .gs-modal button{margin-top:8px;padding:8px 12px;border-radius:8px;border:1px solid #2a2f3a;background:#1a1f2a;color:#e9eef6;cursor:pointer}
+
+  /* About button styled to blend with typical dark control panels */
+  .gs-about-btn{display:inline-block;margin:6px 0 10px 0;padding:6px 10px;border-radius:8px;border:1px solid #2a2f3a;
+    background:#1a1f2a;color:#e9eef6;font:13px/1.2 system-ui,Segoe UI,Roboto,Helvetica,Arial,sans-serif;cursor:pointer}
+  .gs-about-btn:hover{filter:brightness(1.08)}
+</style>
+<script>
+(function(){
+  // Tooltip
+  const tip = document.createElement('div'); tip.className='gs-tip'; document.documentElement.appendChild(tip);
+  let hideT, showT;
+  function pos(e){
+    const pad = 14, r = tip.getBoundingClientRect();
+    let x = (e.clientX||0) + 14, y = (e.clientY||0) + 14;
+    if (x + r.width + pad > innerWidth)  x = innerWidth - r.width - pad;
+    if (y + r.height + pad > innerHeight) y = innerHeight - r.height - pad;
+    tip.style.left = x + 'px'; tip.style.top = y + 'px';
+  }
+  function show(e, text, title){
+    clearTimeout(hideT);
+    tip.innerHTML = (title?'<h4>'+title+'</h4>':'') + '<p>'+text+'</p>';
+    tip.classList.add('show'); pos(e);
+  }
+  function hide(){ clearTimeout(showT); hideT=setTimeout(()=>tip.classList.remove('show'), 60); }
+  addEventListener('mousemove', pos, {passive:true});
+  document.addEventListener('mouseover', (ev)=>{
+    const el = ev.target.closest('[data-help],[title]'); if(!el) return;
+    const text = el.getAttribute('data-help') || el.getAttribute('title'); const ttl = el.getAttribute('data-help-title')||'';
+    if (text){ showT=setTimeout(()=>show(ev, text, ttl), 100); }
+  }, true);
+  document.addEventListener('mouseout', (ev)=>{ const el=ev.target.closest('[data-help],[title]'); if(el) hide(); }, true);
+
+  // About modal
+  const backdrop = document.createElement('div'); backdrop.className='gs-backdrop';
+  const modal = document.createElement('div'); modal.className='gs-modal';
+  backdrop.appendChild(modal); document.documentElement.appendChild(backdrop);
+  window.GSAbout = {
+    open(html){ modal.innerHTML = html + '<div style="text-align:right"><button data-gs-close>Close</button></div>'; backdrop.classList.add('show'); },
+    close(){ backdrop.classList.remove('show'); }
+  };
+  addEventListener('keydown', e=>{ if(e.key==='Escape') GSAbout.close(); });
+  backdrop.addEventListener('click', e=>{ if(e.target===backdrop || e.target.hasAttribute('data-gs-close')) GSAbout.close(); });
+
+  function ensureAboutInPanel(){
+    const panel = document.getElementById('controls') || document.getElementById('panel') || document.querySelector('.controls,.sidebar,.panel');
+    if (!panel) return;
+    if (!panel.querySelector('#aboutBtn')){
+      const b = document.createElement('button');
+      b.id='aboutBtn'; b.className='gs-about-btn'; b.textContent='About';
+      panel.insertBefore(b, panel.firstChild);
+    }
+  }
+  function wireAbout(){
+    document.addEventListener('click', (e)=>{
+      const btn = e.target.closest('#aboutBtn'); if(!btn) return;
+      GSAbout.open(
+        '<h2>Spiral Galaxy Simulator</h2>'+
+        '<p>This interactive toy helps you build intuition for how disk galaxies move. Tweak the stellar disk, gas, an optional central black hole, and a dark-matter halo to see how each affects the rotation curve and structure.</p>'+
+        '<div class="row"><div><h3>Try:</h3><ul>'+
+        '<li>Increase disk mass and watch the mid‑radius speeds rise.</li>'+
+        '<li>Turn on the SMBH to steepen only the very inner rotation.</li>'+
+        '<li>Lift the halo amplitude to keep outer speeds flat.</li>'+
+        '</ul></div><div><h3>Why it helps:</h3><ul>'+
+        '<li>Explains flat rotation curves without heavy math.</li>'+
+        '<li>Separates baryonic vs. halo contributions visually.</li>'+
+        '<li>Great for demos, classes, and self‑study.</li>'+
+        '</ul></div></div>'+
+        '<p><small>This is an educational visualization—not a precision model.</small></p>'
+      );
+    }, true);
+  }
+  function applyHelpMap(){
+    const M = {
+      "bhOn":["Central SMBH","Toggle the supermassive black hole on/off. Strongest effects at the very center."],
+      "bhMass":["SMBH Mass Scale","Higher values emulate a more massive black hole—steeper inner rotation curve."],
+      "bhSoft":["SMBH Softening","Numerical softening at tiny radii. Increase if motion looks unstable/noisy."],
+      "bhRing":["Inner Ring Seed","Optional central ring for visuals; disable for a cleaner core."],
+
+      "contours":["Contours","Lines of equal surface density; reveal nested wells and disk shape."],
+      "fillContours":["Filled Contours","Color‑fill the contour bands for a fast density heatmap effect."],
+      "contourLevels":["Contour Levels","How many contour bands to draw. More = finer detail, slower."],
+      "contourEvery":["Contour Step (PM iters)","Update contours every N PM iterations to save performance."],
+      "contourWidth":["Contour Line Width","Thickness of contour lines in pixels."],
+      "expSpacing":["Exponential Spacing","Spreads levels so inner regions aren’t overcrowded."],
+      "closedOnly":["Closed Contours Only","Hide lines that shoot off‑canvas; show only closed loops."],
+      "showHeat":["Heatmap","Smoothed density heatmap to highlight arms and bars."],
+
+      "pmIter":["PM Iterations","Particle–Mesh solver iterations per frame. Higher = smoother potential, slower."],
+      "pmGrid":["PM Grid Size","Resolution of the gravity mesh. Larger grids capture finer structure."],
+      "pmSmooth":["PM Smoothing","Reduces noise in the mesh solution; too much blurs features."],
+      "pmEvery":["PM Update Step","Recompute PM each N frames. Set 1 for maximum fidelity."],
+      "pmOmega":["PM Over‑Relaxation (ω)","SOR relaxation factor. ~1.8–1.95 often converges faster; too high can destabilize."],
+      "pmRamp":["PM Ramp‑up","Gradually ramps PM strength from 0→1 at start to avoid a violent jump."],
+
+      "numStars":["Particle Count","Number of star particles. More looks richer but costs performance."],
+      "dt":["Time Step","Integration step size. Smaller is smoother and more stable."],
+      "fade":["Trail Fade","Fade previous frames so motion leaves subtle trails."],
+      "pause":["Pause/Play","Pause to inspect structures; resume to evolve."],
+
+      "padFactor":["View Padding","Extra margin so features aren’t cropped."],
+      "scale":["View Scale","Visual zoom of the canvas view—does not change physics."],
+      "preset":["Presets","Load a predefined parameter set for quick exploration."]
+    };
+    for (const id in M){
+      const el = document.getElementById(id);
+      if (el && !el.hasAttribute('data-help')){
+        el.setAttribute('data-help-title', M[id][0]);
+        el.setAttribute('data-help', M[id][1]);
+      }
+    }
+  }
+  function ready(fn){ if(document.readyState!=='loading') fn(); else document.addEventListener('DOMContentLoaded', fn); }
+  ready(ensureAboutInPanel); ready(wireAbout); ready(applyHelpMap);
+  new MutationObserver(()=>{ ensureAboutInPanel(); applyHelpMap(); }).observe(document.documentElement,{childList:true,subtree:true});
+})();
+</script>
+<!-- END GS TOOLTIP + ABOUT INJECT --></head>
 <body>
 <div id="app">
   <canvas id="galaxy"></canvas>
@@ -164,6 +296,8 @@
   <div class="overlay" id="hud"></div>
   <div class="footer">Made with ❤️ and vanilla JS · <span class="kbd">Canvas 2D</span></div>
 </div>
+
+<!-- GS_JOIN_MARKER: paste Part B immediately after this line -->
 
 <script>
 (()=>{
@@ -911,3 +1045,4 @@ background: url('data:image/svg+xml;utf8,<svg xmlns=\"http://www.w3.org/2000/svg
 <!-- END: BuyMeACoffee floating button -->
 </body>
 </html>
+
